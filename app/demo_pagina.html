@@ -132,17 +132,28 @@ function selecionar(i) {
   pintar();
 }
 
+function textoTurno(turno) {
+  if (!turno) return "";
+  if (turno.mensagem) return turno.mensagem;
+  if (turno.anexo) return "Enviar o arquivo " + turno.anexo;
+  return "";
+}
+
 function mostrarProxima() {
   const caixa = document.getElementById("proxima");
   const caso = casos[indice];
   const turno = sessao && caso ? caso.turnos[passo] : null;
+  const alvo = document.getElementById("proxima-texto");
+  const botao = document.getElementById("proxima-btn");
   if (!turno) {
     caixa.hidden = true;
+    alvo.textContent = "";
+    botao.dataset.indice = "";
     return;
   }
   caixa.hidden = false;
-  const fala = turno.mensagem || (turno.anexo ? "Enviar o arquivo " + turno.anexo : "");
-  document.getElementById("proxima-texto").textContent = fala;
+  botao.dataset.indice = String(passo);
+  alvo.textContent = (passo + 1) + "/" + caso.turnos.length + " - " + textoTurno(turno);
 }
 
 function novaSessao() {
@@ -217,21 +228,28 @@ async function disparar(quem, visivel, mensagem, nomeAnexo) {
     if (minha !== geracao) return;
     espera.lastChild.textContent = dado.resposta || "";
     mostrarStatus(dado);
-    mostrarProxima();
   } catch (erro) {
     if (minha !== geracao) return;
     espera.lastChild.textContent = "Nao consegui responder agora. Tente de novo em instantes.";
   } finally {
-    if (minha === geracao) travar(false);
+    if (minha === geracao) {
+      mostrarProxima();
+      travar(false);
+    }
   }
 }
 
 async function enviarProxima() {
   const caso = casos[indice];
-  const turno = caso && caso.turnos[passo];
+  const botao = document.getElementById("proxima-btn");
+  const indiceFala = botao.dataset.indice === "" || botao.dataset.indice == null
+    ? passo
+    : Number(botao.dataset.indice);
+  const turno = caso && caso.turnos[indiceFala];
   if (!turno || ocupado) return;
   if (!sessao) novaSessao();
-  passo += 1;
+  passo = indiceFala + 1;
+  mostrarProxima();
   const fala = turno.mensagem || (turno.anexo ? "Enviei " + turno.anexo : "");
   await disparar(caso.nome.split(" ")[0], fala, turno.mensagem, turno.anexo);
 }
