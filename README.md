@@ -160,6 +160,8 @@ Subir MCP de treino e o agente:
 docker compose up -d
 ```
 
+No Render, a operadora e um segundo Web Service, no mesmo repositorio. Docker Context `.`, Dockerfile Path `mcp/Dockerfile`, Health Check Path `/saude`. Variavel `MCP_OPERADORA_TOKEN` com o mesmo valor nos dois servicos. No agente, `MCP_OPERADORA_URL` fica `https://<operadora>.onrender.com/mcp`.
+
 Ou so a imagem do agente, com o indice ja presente em `storage/`:
 
 ```bash

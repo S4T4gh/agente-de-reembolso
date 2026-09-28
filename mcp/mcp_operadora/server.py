@@ -33,13 +33,18 @@ from .esquema import beneficiario as montar_beneficiario
 PADRAO_DADOS = "./casos_treino"
 
 
+def _porta() -> int:
+    """O Render injeta PORT. Fora dele vale MCP_OPERADORA_PORT."""
+    return int(os.getenv("PORT") or os.getenv("MCP_OPERADORA_PORT", "9000"))
+
+
 def _config() -> dict[str, Any]:
     return {
         "dados": os.getenv("MCP_OPERADORA_DADOS", PADRAO_DADOS),
         "token": os.getenv("MCP_OPERADORA_TOKEN", ""),
         "esquema": os.getenv("MCP_OPERADORA_ESQUEMA", "v1").lower(),
         "host": os.getenv("MCP_OPERADORA_HOST", "127.0.0.1"),
-        "port": int(os.getenv("MCP_OPERADORA_PORT", "9000")),
+        "port": _porta(),
     }
 
 
@@ -82,6 +87,12 @@ def construir(cfg: dict[str, Any] | None = None) -> tuple[FastMCP, Operadora]:
         port=cfg["port"],
         stateless_http=True,
     )
+
+    @mcp.custom_route("/saude", methods=["GET"], include_in_schema=False)
+    async def saude(_pedido):
+        from starlette.responses import JSONResponse
+
+        return JSONResponse({"status": "ok"})
 
     @mcp.tool()
     def consultar_beneficiario(carteirinha: str) -> dict:
