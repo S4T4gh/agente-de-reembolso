@@ -9,6 +9,7 @@ from app.agents.documento.node import documento_node
 from app.agents.normas.node import normas_node
 from app.agents.state import AgentState
 from app.agents.triagem.node import triagem_node
+from app.agents.voz import registrar_turno
 from app.guardrails.privacidade import extrair_carteirinhas
 from app.texto import fold
 
@@ -204,6 +205,7 @@ def processar_turno(session_id: str, mensagem: str, anexo: dict | None = None) -
         "mensagem": mensagem or "",
         "handoff": "",
         "resposta": "",
+        "voz_ia": False,
     }
 
     if anexo:
@@ -225,9 +227,19 @@ def processar_turno(session_id: str, mensagem: str, anexo: dict | None = None) -
         entrada["anexo_b64"] = ""
 
     resultado = grafo.invoke(entrada, config)
+    nome_anexo = (anexo or {}).get("filename") or ""
+    registrar_turno(resultado, mensagem or "", nome_anexo)
     texto = fold(resultado.get("resposta") or "")
     resultado["pediu_carteirinha"] = (
         "16 digito" in texto or "sua carteirinha" in texto or "da carteirinha" in texto
     )
-    grafo.update_state(config, {"pediu_carteirinha": resultado["pediu_carteirinha"]})
+    grafo.update_state(
+        config,
+        {
+            "pediu_carteirinha": resultado["pediu_carteirinha"],
+            "dialogo": resultado.get("dialogo") or [],
+            "resposta": resultado.get("resposta") or "",
+            "voz_ia": False,
+        },
+    )
     return resultado

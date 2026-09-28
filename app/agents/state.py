@@ -46,3 +46,5 @@ class AgentState(TypedDict, total=False):
     pronto_para_calculo: bool
 
     resposta: str
+    dialogo: list
+    voz_ia: bool

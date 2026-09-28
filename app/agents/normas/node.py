@@ -181,19 +181,23 @@ def _responder_pergunta(mensagem: str, state: AgentState) -> str:
         f"categoria={_as_str(state.get('categoria_documento'))}; "
         f"pendencias={state.get('pendencias') or []}"
     )
+    conversa = "\n".join(state.get("dialogo") or [])
     prompt = [
         SystemMessage(content=(
             "Voce e assistente de reembolso da SaudeMais. Responda em portugues, claro e empatico. "
-            "PRIORIDADE: responder exatamente a pergunta do beneficiario neste turno. "
+            "PRIORIDADE: responder exatamente a pergunta do beneficiario neste turno, "
+            "usando a conversa anterior. A pessoa pode ter informado a carteirinha ou um documento antes. "
             "Nao peça documento novo se a pessoa so fez uma duvida sobre regra/valor/prazo. "
             "NUNCA revele CPF completo, codigos CID ou hipoteses diagnosticas. "
             "Se o pedido estiver ESCALADO_ANALISTA / OPME, diga que nao informa valor agora. "
             "Use apenas as normas fornecidas. Se a norma nao cobrir, diga com honestidade.\n\n"
+            f"Conversa ate aqui:\n{conversa or '(inicio)'}\n\n"
             f"Estado do pedido (contexto, nao roteiro): {situacao}\n\n"
             f"Normas:\n{ctx[:6000]}"
         )),
         HumanMessage(content=mensagem),
     ]
+    state["voz_ia"] = True
     return llm.invoke(prompt).content
 
 
