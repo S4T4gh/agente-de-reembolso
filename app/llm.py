@@ -33,7 +33,7 @@ import os
 import re
 from pathlib import Path
 
-MODELO = "gemini-2.5-flash-lite"
+MODELO = "moonshotai/kimi-k3"
 MODELO_EMBEDDING = "gemini-embedding-2"
 DIMENSOES = 1536
 
@@ -69,19 +69,103 @@ def _ambiente() -> tuple[str, str]:
         raise FaltaConfiguracao(
             "preencha BOOTCAMP_LLM_ENDPOINT e BOOTCAMP_API_KEY no .env "
             "(copie de .env.example)")
-    # Tanto faz se você colar a URL com /v1 ou /v1beta no fim.
-    return re.sub(r"/v1(beta)?$", "", endpoint), chave
+    endpoint = re.sub(r"/chat/completions$", "", endpoint)
+    endpoint = re.sub(r"/v1beta$", "/v1", endpoint)
+    if not endpoint.endswith("/v1"):
+        endpoint += "/v1"
+    return endpoint, chave
+
+
+def _modelo() -> str:
+    carregar_env()
+    return os.getenv("BOOTCAMP_LLM_MODEL", MODELO).strip() or MODELO
+
+
+def _usar_kimi() -> bool:
+    endpoint, _ = _ambiente()
+    return "nvidia.com" in endpoint or _modelo().startswith("moonshotai/")
+
+
+class _Resposta:
+    def __init__(self, content: str):
+        self.content = content
+
+
+def _texto_mensagem(mensagem) -> tuple[str, str]:
+    tipo = getattr(mensagem, "type", None) or "user"
+    papeis = {"system": "system", "human": "user", "ai": "assistant"}
+    papel = papeis.get(tipo, "user")
+    conteudo = getattr(mensagem, "content", mensagem)
+    if isinstance(conteudo, list):
+        partes = []
+        for item in conteudo:
+            if isinstance(item, dict):
+                partes.append(str(item.get("text") or item.get("content") or ""))
+            else:
+                partes.append(str(item))
+        conteudo = "".join(partes)
+    return papel, str(conteudo)
+
+
+def _completar_chat(mensagens, temperature: float = 0) -> str:
+    """Chama o Kimi K3 no formato compativel com a API da NVIDIA."""
+    import httpx
+
+    endpoint, chave = _ambiente()
+    corpo = {
+        "model": _modelo(),
+        "temperature": temperature,
+        "max_tokens": 2048,
+        "stream": False,
+        "messages": [
+            {"role": papel, "content": texto}
+            for papel, texto in (_texto_mensagem(m) for m in mensagens)
+        ],
+    }
+    with httpx.Client(timeout=120) as cliente:
+        resposta = cliente.post(
+            f"{endpoint}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {chave}",
+                "Content-Type": "application/json",
+            },
+            json=corpo,
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+    mensagem = (dados.get("choices") or [{}])[0].get("message") or {}
+    conteudo = mensagem.get("content") or mensagem.get("reasoning_content") or ""
+    if isinstance(conteudo, list):
+        conteudo = "".join(
+            str(item.get("text") or "") if isinstance(item, dict) else str(item)
+            for item in conteudo
+        )
+    return str(conteudo).strip()
+
+
+class _ChatKimi:
+    def __init__(self, temperature: float = 0):
+        self.temperature = temperature
+
+    def invoke(self, mensagens, **_extra):
+        if isinstance(mensagens, str):
+            mensagens = [type("M", (), {"type": "human", "content": mensagens})()]
+        return _Resposta(_completar_chat(mensagens, self.temperature))
 
 
 # ------------------------------------------------------- LangChain / LangGraph
 def criar_llm(**extra):
-    """O modelo de chat, pronto para `bind_tools` e `create_react_agent`."""
+    """Chat via Kimi K3 quando o endpoint e o da NVIDIA."""
+    temperature = extra.pop("temperature", 0)
+    if _usar_kimi():
+        return _ChatKimi(temperature=temperature)
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     endpoint, chave = _ambiente()
+    base = re.sub(r"/v1$", "", endpoint)
     return ChatGoogleGenerativeAI(
-        model=MODELO, google_api_key=chave, base_url=endpoint,
-        temperature=extra.pop("temperature", 0), **extra)
+        model="gemini-2.5-flash-lite", google_api_key=chave, base_url=base,
+        temperature=temperature, **extra)
 
 
 def criar_embeddings(**extra):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import pickle
 from functools import lru_cache
 from pathlib import Path
@@ -15,19 +16,26 @@ RAIZ = Path(__file__).resolve().parents[2]
 DIR_STORAGE = RAIZ / "storage"
 
 
+def _bm25(nodes: list[TextNode]):
+    from llama_index.retrievers.bm25 import BM25Retriever
+
+    return BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=12)
+
+
 @lru_cache(maxsize=1)
 def _carregar():
     carregar_env()
+    with (DIR_STORAGE / "bm25_nodes.pkl").open("rb") as f:
+        nodes: list[TextNode] = pickle.load(f)
+    bm25 = _bm25(nodes)
+    endpoint = os.environ.get("BOOTCAMP_LLM_ENDPOINT", "")
+    # O indice denso foi gerado com embeddings do Gemini. No Kimi/NVIDIA ele nao casa.
+    if "nvidia.com" in endpoint:
+        return None, bm25
     Settings.embed_model = criar_embeddings_llamaindex()
     storage = StorageContext.from_defaults(persist_dir=str(DIR_STORAGE / "vector"))
     index = load_index_from_storage(storage)
-    with (DIR_STORAGE / "bm25_nodes.pkl").open("rb") as f:
-        nodes: list[TextNode] = pickle.load(f)
-    from llama_index.retrievers.bm25 import BM25Retriever
-
-    bm25 = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=12)
-    dense = index.as_retriever(similarity_top_k=12)
-    return dense, bm25
+    return index.as_retriever(similarity_top_k=12), bm25
 
 
 def _rrf(listas: list[list[NodeWithScore]], k: int = 60) -> list[NodeWithScore]:
@@ -61,7 +69,13 @@ def _rerank(query: str, candidatos: list[NodeWithScore], top_n: int) -> list[Nod
 
 def buscar(query: str, top_k: int = 6) -> list[dict]:
     dense, bm25 = _carregar()
-    fundidos = _rrf([dense.retrieve(query), bm25.retrieve(query)])
+    listas = [bm25.retrieve(query)]
+    if dense is not None:
+        try:
+            listas.insert(0, dense.retrieve(query))
+        except Exception:
+            pass
+    fundidos = _rrf(listas) if len(listas) > 1 else listas[0]
     finais = _rerank(query, fundidos, top_n=top_k)
     return [
         {
