@@ -40,6 +40,11 @@
     .pessoa { align-self: flex-start; background: #ffedd5; }
     .agente { align-self: flex-end; background: #f5f5f4; }
     .quem { display: block; font-size: 0.75rem; color: #78716c; margin-bottom: 0.2rem; }
+    .bolha a.doc-link { color: #9a3412; font-weight: 600; }
+    .bolha iframe.doc {
+      display: block; width: 100%; height: 240px; margin-top: 0.45rem;
+      border: 1px solid #e7e5e4; border-radius: 8px; background: #fff;
+    }
     #proxima {
       margin-top: 0.8rem; background: #fff; border: 1px dashed #fdba74; border-radius: 14px; padding: 0.75rem 0.9rem;
     }
@@ -160,14 +165,30 @@ function novaSessao() {
   sessao = "demo-" + casos[indice].id + "-" + Date.now();
 }
 
-function bolha(quem, classe, mensagem) {
+function bolha(quem, classe, mensagem, nomeAnexo) {
   const el = document.createElement("div");
   el.className = "bolha " + classe;
   const nome = document.createElement("span");
   nome.className = "quem";
   nome.textContent = quem;
   el.appendChild(nome);
-  el.appendChild(document.createTextNode(mensagem || "(documento enviado)"));
+  el.appendChild(document.createTextNode(mensagem || "Documento enviado"));
+  if (nomeAnexo) {
+    const url = "/demo/anexo/" + encodeURIComponent(nomeAnexo);
+    el.appendChild(document.createElement("br"));
+    const link = document.createElement("a");
+    link.className = "doc-link";
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Abrir " + nomeAnexo;
+    el.appendChild(link);
+    const frame = document.createElement("iframe");
+    frame.className = "doc";
+    frame.src = url;
+    frame.title = nomeAnexo;
+    el.appendChild(frame);
+  }
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
   return el;
@@ -220,7 +241,7 @@ function travar(ligado) {
 
 async function disparar(quem, visivel, mensagem, nomeAnexo) {
   const minha = ++geracao;
-  bolha(quem, "pessoa", visivel);
+  bolha(quem, "pessoa", visivel, nomeAnexo);
   const espera = bolha("Agente", "agente", "Lendo...");
   travar(true);
   try {

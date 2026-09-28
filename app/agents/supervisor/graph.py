@@ -114,6 +114,16 @@ def supervisor_node(state: AgentState) -> AgentState:
         state["handoff"] = "triagem"
         return state
 
+    # Acabou de pedir os 16 digitos: um numero solto e a carteirinha,
+    # mesmo sem a palavra e mesmo que a frase pareca uma duvida.
+    if state.get("pediu_carteirinha"):
+        bruto = state.get("mensagem") or ""
+        digitos = sum(c.isdigit() for c in bruto)
+        letras = sum(c.isalpha() for c in bruto)
+        if carts or (digitos >= 12 and letras <= 24):
+            state["handoff"] = "triagem"
+            return state
+
     if not state.get("carteirinha_sessao"):
         state["handoff"] = "triagem"
         return state
@@ -214,4 +224,10 @@ def processar_turno(session_id: str, mensagem: str, anexo: dict | None = None) -
     else:
         entrada["anexo_b64"] = ""
 
-    return grafo.invoke(entrada, config)
+    resultado = grafo.invoke(entrada, config)
+    texto = fold(resultado.get("resposta") or "")
+    resultado["pediu_carteirinha"] = (
+        "16 digito" in texto or "sua carteirinha" in texto or "da carteirinha" in texto
+    )
+    grafo.update_state(config, {"pediu_carteirinha": resultado["pediu_carteirinha"]})
+    return resultado

@@ -22,6 +22,7 @@ class AgentState(TypedDict, total=False):
     # Identidade e dados MCP
     carteirinha_sessao: str | None
     carteirinha: str | None
+    pediu_carteirinha: bool
     beneficiario: dict | None
     historico: list
     terceiros_recusados: list

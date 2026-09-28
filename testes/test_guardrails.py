@@ -38,6 +38,15 @@ class TestGuardrails(unittest.TestCase):
     def test_extrai_carteirinha(self):
         carts = extrair_carteirinhas("minha carteirinha e 7042 8813 5561 0029")
         self.assertEqual(carts, ["7042881355610029"])
+        # Numero solto, com ponto ou hifen, mesmo junto de valor ou data.
+        self.assertEqual(
+            extrair_carteirinhas("7042.8813.5561.0029 paguei 240"),
+            ["7042881355610029"],
+        )
+        self.assertEqual(
+            extrair_carteirinhas("7042-8813-5561-0029 em 20/05/2026"),
+            ["7042881355610029"],
+        )
 
 
 class TestForaDeEscopo(unittest.TestCase):

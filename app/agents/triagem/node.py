@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from app.agents.state import AgentState
-from app.guardrails.privacidade import extrair_carteirinhas, sanitizar_resposta
+from app.guardrails.privacidade import (
+    digitos_quase_carteirinha,
+    extrair_carteirinhas,
+    sanitizar_resposta,
+)
 from app.texto import fold
 from app.tools import mcp_client
 
@@ -124,11 +128,20 @@ def triagem_node(state: AgentState) -> AgentState:
                 "da sua carteirinha (somente a sua)."
             )
         elif "carteirinha" in msg or any(ch.isdigit() for ch in mensagem):
-            resposta_partes.append(
-                f"Ja tenho o anexo ({nome_arq}) nesta conversa. "
-                "Ainda nao validei a carteirinha: envie os 16 digitos "
-                "(com ou sem espacos) para eu consultar o cadastro e analisar o arquivo."
-            )
+            quase = digitos_quase_carteirinha(mensagem)
+            if quase:
+                resposta_partes.append(
+                    f"Ja tenho o anexo ({nome_arq}) nesta conversa. "
+                    f"Li um numero com {quase} digitos; a carteirinha tem 16. "
+                    "Pode reenviar so esses 16 digitos? Nao precisa escrever a palavra carteirinha."
+                )
+            else:
+                resposta_partes.append(
+                    f"Ja tenho o anexo ({nome_arq}) nesta conversa. "
+                    "Ainda nao validei a carteirinha: envie os 16 digitos "
+                    "(com ou sem espacos, pontos ou hifens) para eu consultar o cadastro "
+                    "e analisar o arquivo."
+                )
         else:
             resposta_partes.append(
                 f"Recebi o seu anexo ({nome_arq}) e ja o guardei para analise de reembolso. "
@@ -141,7 +154,13 @@ def triagem_node(state: AgentState) -> AgentState:
         return state
 
     elif not carteirinha_sessao:
-        if any(
+        quase = digitos_quase_carteirinha(mensagem)
+        if quase and sum(c.isalpha() for c in mensagem) <= 24:
+            resposta_partes.append(
+                f"Li um numero com {quase} digitos. A carteirinha do plano tem 16. "
+                "Pode reenviar so esse numero? Nao precisa escrever a palavra carteirinha."
+            )
+        elif any(
             p in msg
             for p in ("reembolso", "psicolog", "consulta", "terapia", "cirurgia", "exame")
         ):
