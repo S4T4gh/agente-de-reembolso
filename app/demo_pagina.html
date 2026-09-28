@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agente de reembolso</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", sans-serif; color: #1c1917; background: #faf7f2; }
+    main { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    h1 { font-size: 1.7rem; margin: 0 0 0.3rem; }
+    .aviso { color: #57534e; margin: 0 0 1.2rem; }
+    .trilhos { display: flex; gap: 0.6rem; align-items: stretch; }
+    .seta {
+      border: 0; background: #fff; border-radius: 999px; width: 2.4rem;
+      cursor: pointer; font-size: 1.4rem; color: #9a3412;
+    }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; flex: 1; }
+    .card {
+      text-align: left; background: #fff; border: 1px solid #e7e5e4; border-radius: 14px;
+      padding: 0.9rem 1rem; cursor: pointer; min-height: 9.5rem;
+    }
+    .card.ativa { border-color: #c2410c; box-shadow: 0 0 0 2px #fdba74; }
+    .selo { margin: 0; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: #9a3412; }
+    .card h2 { font-size: 1.05rem; margin: 0.35rem 0; }
+    .card p { margin: 0.25rem 0; color: #44403c; line-height: 1.4; font-size: 0.92rem; }
+    .acoes { display: flex; gap: 0.6rem; margin: 1rem 0; flex-wrap: wrap; }
+    button.prim, button.sec { border-radius: 999px; padding: 0.55rem 1rem; cursor: pointer; font-size: 0.95rem; }
+    button.prim { background: #9a3412; color: #fff; border: 0; }
+    button.sec { background: #fff; border: 1px solid #d6d3d1; }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    #status { min-height: 1.4rem; margin: 0 0 0.8rem; color: #44403c; font-size: 0.95rem; }
+    #chat {
+      background: #fff; border: 1px solid #e7e5e4; border-radius: 16px;
+      min-height: 16rem; max-height: 28rem; overflow: auto; padding: 1rem;
+      display: flex; flex-direction: column; gap: 0.7rem;
+    }
+    .bolha { max-width: 85%; padding: 0.65rem 0.8rem; border-radius: 12px; line-height: 1.45; white-space: pre-wrap; }
+    .pessoa { align-self: flex-start; background: #ffedd5; }
+    .agente { align-self: flex-end; background: #f5f5f4; }
+    .quem { display: block; font-size: 0.75rem; color: #78716c; margin-bottom: 0.2rem; }
+    form { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
+    input { flex: 1; border: 1px solid #d6d3d1; border-radius: 999px; padding: 0.7rem 1rem; font-size: 1rem; }
+    @media (max-width: 800px) {
+      .cards { grid-template-columns: 1fr; }
+      .card { display: none; }
+      .card.ativa { display: block; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Agente de reembolso</h1>
+  <p class="aviso">Dados fict&iacute;cios. Escolha um atendimento ou escreva como se fosse o benefici&aacute;rio.</p>
+  <div class="trilhos">
+    <button class="seta" id="anterior" type="button" aria-label="Caso anterior">&#8249;</button>
+    <div class="cards" id="cards"></div>
+    <button class="seta" id="proximo" type="button" aria-label="Proximo caso">&#8250;</button>
+  </div>
+  <div class="acoes">
+    <button class="prim" id="rodar" type="button">Rodar esta conversa</button>
+    <button class="sec" id="recomecar" type="button">Recome&ccedil;ar</button>
+  </div>
+  <p id="status"></p>
+  <div id="chat" aria-live="polite"></div>
+  <form id="falar">
+    <input id="texto" type="text" placeholder="Escrever como o benefici&aacute;rio" autocomplete="off">
+    <button class="prim" type="submit">Enviar</button>
+  </form>
+</main>
+<script>
+const ROTULO = {
+  APROVADO: "Aprovado",
+  APROVADO_PARCIAL: "Aprovado parcial",
+  PENDENTE_DOCUMENTO: "Pendente de documento",
+  NEGADO: "Negado",
+  FORA_DE_ESCOPO: "Fora de escopo",
+  ESCALADO_ANALISTA: "Escalado para analista"
+};
+let casos = [];
+let indice = 0;
+let sessao = "";
+let geracao = 0;
+let ocupado = false;
+
+const cards = document.getElementById("cards");
+const chat = document.getElementById("chat");
+const status = document.getElementById("status");
+const rodarBtn = document.getElementById("rodar");
+const texto = document.getElementById("texto");
+
+function moeda(v) {
+  if (v == null || v === "") return "";
+  return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function pintar() {
+  cards.innerHTML = "";
+  casos.forEach((caso, i) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "card" + (i === indice ? " ativa" : "");
+    el.innerHTML = "<p class='selo'></p><h2></h2><p class='resumo'></p><p class='valor'></p>";
+    el.querySelector(".selo").textContent = caso.desfecho;
+    el.querySelector("h2").textContent = caso.nome;
+    el.querySelector(".resumo").textContent = caso.resumo;
+    el.querySelector(".valor").textContent = caso.valor;
+    el.addEventListener("click", () => selecionar(i));
+    cards.appendChild(el);
+  });
+}
+
+function selecionar(i) {
+  geracao += 1;
+  indice = (i + casos.length) % casos.length;
+  sessao = "";
+  chat.innerHTML = "";
+  status.textContent = "";
+  pintar();
+}
+
+function novaSessao() {
+  sessao = "demo-" + casos[indice].id + "-" + Date.now();
+}
+
+function bolha(quem, classe, mensagem) {
+  const el = document.createElement("div");
+  el.className = "bolha " + classe;
+  const nome = document.createElement("span");
+  nome.className = "quem";
+  nome.textContent = quem;
+  el.appendChild(nome);
+  el.appendChild(document.createTextNode(mensagem || "(documento enviado)"));
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+  return el;
+}
+
+function mostrarStatus(dado) {
+  const partes = [];
+  if (dado.decisao) partes.push(ROTULO[dado.decisao] || dado.decisao);
+  if (dado.valor_solicitado_brl != null) partes.push("pedido " + moeda(dado.valor_solicitado_brl));
+  if (dado.valor_reembolso_brl != null) partes.push("reembolso " + moeda(dado.valor_reembolso_brl));
+  else if (dado.decisao === "ESCALADO_ANALISTA") partes.push("sem valor automatico");
+  if (dado.protocolo) partes.push("protocolo " + dado.protocolo);
+  status.textContent = partes.length ? "Decisao agora: " + partes.join(" | ") : "";
+}
+
+async function anexoBase64(nome) {
+  const resp = await fetch("/demo/anexo/" + encodeURIComponent(nome));
+  if (!resp.ok) throw new Error("anexo indisponivel");
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+async function enviarTurno(mensagem, nomeAnexo) {
+  const corpo = { session_id: sessao, mensagem: mensagem || "" };
+  if (nomeAnexo) {
+    corpo.anexo = {
+      filename: nomeAnexo,
+      mime_type: "application/pdf",
+      base64: await anexoBase64(nomeAnexo)
+    };
+  }
+  const resp = await fetch("/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(corpo)
+  });
+  if (!resp.ok) throw new Error("o agente nao respondeu");
+  return resp.json();
+}
+
+function travar(ligado) {
+  ocupado = ligado;
+  rodarBtn.disabled = ligado;
+  document.getElementById("recomecar").disabled = ligado;
+  texto.disabled = ligado;
+}
+
+async function rodar() {
+  const caso = casos[indice];
+  const minha = ++geracao;
+  novaSessao();
+  chat.innerHTML = "";
+  status.textContent = "Abrindo o atendimento de " + caso.nome.split(" ")[0] + "...";
+  travar(true);
+  try {
+    for (const turno of caso.turnos) {
+      if (minha !== geracao) return;
+      const fala = turno.mensagem || (turno.anexo ? "Enviei " + turno.anexo : "");
+      bolha(caso.nome.split(" ")[0], "pessoa", fala);
+      const espera = bolha("Agente", "agente", "Lendo...");
+      const dado = await enviarTurno(turno.mensagem, turno.anexo);
+      if (minha !== geracao) return;
+      espera.lastChild.textContent = dado.resposta || "";
+      mostrarStatus(dado);
+    }
+  } catch (erro) {
+    bolha("Agente", "agente", "Nao consegui continuar esta conversa. Tente de novo em instantes.");
+  } finally {
+    if (minha === geracao) travar(false);
+  }
+}
+
+document.getElementById("anterior").addEventListener("click", () => selecionar(indice - 1));
+document.getElementById("proximo").addEventListener("click", () => selecionar(indice + 1));
+rodarBtn.addEventListener("click", rodar);
+document.getElementById("recomecar").addEventListener("click", () => selecionar(indice));
+document.getElementById("falar").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const mensagem = texto.value.trim();
+  if (!mensagem || ocupado || !casos.length) return;
+  if (!sessao) {
+    novaSessao();
+    chat.innerHTML = "";
+  }
+  const caso = casos[indice];
+  texto.value = "";
+  geracao += 1;
+  const minha = geracao;
+  bolha(caso.nome.split(" ")[0], "pessoa", mensagem);
+  const espera = bolha("Agente", "agente", "Lendo...");
+  travar(true);
+  try {
+    const dado = await enviarTurno(mensagem, null);
+    if (minha !== geracao) return;
+    espera.lastChild.textContent = dado.resposta || "";
+    mostrarStatus(dado);
+  } catch (erro) {
+    espera.lastChild.textContent = "Nao consegui responder agora. Tente de novo em instantes.";
+  } finally {
+    if (minha === geracao) travar(false);
+  }
+});
+
+fetch("/demo/casos").then((r) => r.json()).then((lista) => {
+  casos = lista;
+  pintar();
+});
+</script>
+</body>
+</html>

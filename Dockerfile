@@ -23,6 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY storage/ ./storage/
 COPY kb/ ./kb/
 COPY app/ ./app/
+COPY casos_treino/ ./casos_treino/
+COPY anexos/treino/ ./anexos/treino/
 
 # Variaveis de ambiente injetadas no run:
 # BOOTCAMP_LLM_ENDPOINT, BOOTCAMP_API_KEY, MCP_OPERADORA_URL, MCP_OPERADORA_TOKEN

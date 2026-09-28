@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
 
 from app.llm import carregar_env
 from app.schemas import ChatRequest, ChatResponse, Categoria, Decisao
@@ -43,30 +44,27 @@ def health() -> dict:
 
 
 @app.get("/", response_class=HTMLResponse)
-def inicio() -> str:
-    """Pagina da URL publica. Sem ela, abrir o endereco devolve Not Found."""
-    return """<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agente de reembolso</title>
-  <style>
-    body { font-family: Georgia, serif; max-width: 40rem; margin: 3rem auto; padding: 0 1.25rem; color: #1c1917; }
-    h1 { font-size: 1.8rem; margin-bottom: 0.4rem; }
-    p { line-height: 1.5; }
-    code { font-family: Consolas, monospace; }
-    a { color: #9a3412; }
-  </style>
-</head>
-<body>
-  <h1>Agente de reembolso</h1>
-  <p>O servico esta no ar. Ele conduz o pedido de reembolso de um plano de saude: le a carteirinha, o documento e as normas, e devolve a decisao.</p>
-  <p>Saude do processo: <a href="/health"><code>GET /health</code></a></p>
-  <p>Um turno da conversa: <code>POST /chat</code> com <code>session_id</code> e <code>mensagem</code>.</p>
-</body>
-</html>
-"""
+def inicio() -> HTMLResponse:
+    """Pagina para escolher um caso ficticio ou escrever como beneficiario."""
+    pagina = Path(__file__).resolve().parent / "demo_pagina.html"
+    return HTMLResponse(pagina.read_text(encoding="utf-8"))
+
+
+@app.get("/demo/casos")
+def demo_casos() -> list:
+    from app.demo import listar
+
+    return listar()
+
+
+@app.get("/demo/anexo/{nome}")
+def demo_anexo(nome: str):
+    from app.demo import anexo
+
+    caminho = anexo(nome)
+    if caminho is None:
+        raise HTTPException(status_code=404, detail="anexo nao encontrado")
+    return FileResponse(caminho, media_type="application/pdf", filename=nome)
 
 
 @app.post("/chat", response_model=ChatResponse)

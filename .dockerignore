@@ -14,7 +14,10 @@ __pycache__/
 _kb_extract/
 _extracao/
 testes/
-anexos/
+anexos/*
+!anexos/treino/
+anexos/treino/*
+!anexos/treino/*.pdf
 avaliacao/
 ingest/
 *.md
