@@ -107,7 +107,7 @@ def _texto_mensagem(mensagem) -> tuple[str, str]:
     return papel, str(conteudo)
 
 
-def _completar_chat(mensagens, temperature: float = 0) -> str:
+def _completar_chat(mensagens, temperature: float = 0, max_tokens: int = 2048) -> str:
     """Chama o Kimi K3 no formato compativel com a API da NVIDIA."""
     import httpx
 
@@ -115,7 +115,7 @@ def _completar_chat(mensagens, temperature: float = 0) -> str:
     corpo = {
         "model": _modelo(),
         "temperature": temperature,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
         "stream": False,
         "messages": [
             {"role": papel, "content": texto}

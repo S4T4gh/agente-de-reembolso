@@ -1,16 +1,17 @@
-"""Recuperacao hibrida: BM25, busca densa, fusao RRF e rerank."""
+"""Recuperacao: BM25 e, no Kimi, releitura dos trechos pelo proprio modelo."""
 
 from __future__ import annotations
 
 import os
 import pickle
+import re
 from functools import lru_cache
 from pathlib import Path
 
 from llama_index.core import Settings, StorageContext, load_index_from_storage
 from llama_index.core.schema import NodeWithScore, TextNode
 
-from app.llm import carregar_env, criar_embeddings_llamaindex
+from app.llm import _completar_chat, _usar_kimi, carregar_env, criar_embeddings_llamaindex
 
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_STORAGE = RAIZ / "storage"
@@ -67,6 +68,48 @@ def _rerank(query: str, candidatos: list[NodeWithScore], top_n: int) -> list[Nod
     return sorted(candidatos, key=score, reverse=True)[:top_n]
 
 
+def _rerank_kimi(query: str, candidatos: list[NodeWithScore], top_n: int) -> list[NodeWithScore]:
+    """O Kimi escolhe, entre os trechos do BM25, os que respondem a pergunta."""
+    if not candidatos:
+        return []
+    blocos = []
+    limite = min(len(candidatos), 12)
+    for i, nws in enumerate(candidatos[:limite]):
+        fonte = (nws.node.metadata or {}).get("fonte", "")
+        texto = (nws.node.get_content() or "").replace("\n", " ")[:500]
+        blocos.append(f"[{i}] ({fonte}) {texto}")
+    pedido = (
+        "Voce seleciona trechos de um regulamento. "
+        f"Responda somente com ate {top_n} indices, do mais util ao menos util, "
+        "separados por virgula. Sem texto extra.\n\n"
+        f"Pergunta: {query}\n\n" + "\n".join(blocos)
+    )
+    try:
+        bruto = _completar_chat(
+            [type("M", (), {"type": "human", "content": pedido})()],
+            temperature=0,
+            max_tokens=64,
+        )
+    except Exception:
+        return _rerank(query, candidatos, top_n)
+    linha = ""
+    for ln in reversed([p.strip() for p in bruto.splitlines() if p.strip()]):
+        if re.fullmatch(r"[\d,\s]+", ln):
+            linha = ln
+            break
+    numeros = [int(n) for n in re.findall(r"\d+", linha or bruto)]
+    escolhidos: list[NodeWithScore] = []
+    vistos: set[int] = set()
+    for i in numeros:
+        if i in vistos or i < 0 or i >= limite:
+            continue
+        vistos.add(i)
+        escolhidos.append(candidatos[i])
+        if len(escolhidos) >= top_n:
+            break
+    return escolhidos or _rerank(query, candidatos, top_n)
+
+
 def buscar(query: str, top_k: int = 6) -> list[dict]:
     dense, bm25 = _carregar()
     listas = [bm25.retrieve(query)]
@@ -76,7 +119,10 @@ def buscar(query: str, top_k: int = 6) -> list[dict]:
         except Exception:
             pass
     fundidos = _rrf(listas) if len(listas) > 1 else listas[0]
-    finais = _rerank(query, fundidos, top_n=top_k)
+    if _usar_kimi():
+        finais = _rerank_kimi(query, fundidos, top_n=top_k)
+    else:
+        finais = _rerank(query, fundidos, top_n=top_k)
     return [
         {
             "texto": n.node.get_content(),
