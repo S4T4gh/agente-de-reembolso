@@ -1,0 +1,36 @@
+# Nao entra na imagem da banca
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.git/
+.gitignore
+
+# Local-only / prova
+_kb_extract/
+_extracao/
+testes/
+casos_treino/
+anexos/
+avaliacao/
+mcp/
+ingest/
+*.md
+instrucoes_da_prova.pdf
+rodar_treino.py
+docker-compose.yml
+validar_modelo.py
+
+# Lixo de storage (indice real esta em storage/vector/ + bm25_nodes.pkl)
+storage/.gitkeep
+storage/*.txt
+storage/bm25_nodes.json
+storage/default__vector_store.json
+storage/docstore.json
+storage/graph_store.json
+storage/image__vector_store.json
+storage/index_store.json

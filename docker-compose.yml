@@ -1,0 +1,40 @@
+# Uso LOCAL apenas (MCP de treino + agente).
+# A banca NAO usa este arquivo: ela faz `docker build` do Dockerfile da raiz
+# e `docker run` com o --env-file dela apontando para o MCP oficial.
+
+services:
+  mcp:
+    build: ./mcp
+    ports:
+      - "9000:9000"
+    environment:
+      MCP_OPERADORA_TOKEN: treino
+      MCP_OPERADORA_DADOS: /dados
+      MCP_OPERADORA_HOST: 0.0.0.0
+    volumes:
+      - ./casos_treino:/dados:ro
+
+  agente:
+    build: .
+    depends_on:
+      - mcp
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Dentro da rede compose o MCP e o servico "mcp", nao localhost
+      MCP_OPERADORA_URL: http://mcp:9000/mcp
+      MCP_OPERADORA_TOKEN: treino
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s

@@ -1,0 +1,124 @@
+{
+  "conformidade": {
+    "total": 12,
+    "ok": 12,
+    "fail": 0,
+    "skip": 0,
+    "acuracia_pct": 100.0,
+    "segundos": 1.9
+  },
+  "calculo_classificacao": {
+    "total": 17,
+    "ok": 17,
+    "fail": 0,
+    "skip": 0,
+    "acuracia_pct": 100.0,
+    "segundos": 0.0
+  },
+  "guardrails": {
+    "total": 7,
+    "ok": 7,
+    "fail": 0,
+    "skip": 0,
+    "acuracia_pct": 100.0,
+    "segundos": 0.0
+  },
+  "recall_rag": {
+    "total": 2,
+    "ok": 2,
+    "fail": 0,
+    "skip": 0,
+    "acuracia_pct": 100.0,
+    "segundos": 11.86
+  },
+  "api_integracao": {
+    "total": 8,
+    "ok": 8,
+    "fail": 0,
+    "skip": 0,
+    "acuracia_pct": 100.0,
+    "segundos": 19.61
+  },
+  "recall_detalhe": {
+    "hit_rate_pct": 100.0,
+    "hits": "8/8",
+    "casos": [
+      {
+        "query": "limite anual de reembolso em URS art. 45",
+        "ok": true,
+        "top_fontes": [
+          "regulamento_geral.pdf",
+          "regulamento_geral.pdf",
+          "circular_11_2026.pdf"
+        ]
+      },
+      {
+        "query": "coparticipacao percentual plano Pleno adesao",
+        "ok": true,
+        "top_fontes": [
+          "regulamento_geral.pdf",
+          "regulamento_geral.pdf",
+          "regulamento_geral.pdf"
+        ]
+      },
+      {
+        "query": "psicoterapia teto URS Circular 02 2026 relatorio quinta sess",
+        "ok": true,
+        "top_fontes": [
+          "circular_02_2026.pdf",
+          "circular_11_2026.pdf",
+          "faq_interno.docx"
+        ]
+      },
+      {
+        "query": "prazo pedido reembolso 150 dias Circular 04",
+        "ok": true,
+        "top_fontes": [
+          "circular_04_2025.pdf",
+          "regulamento_geral.pdf",
+          "circular_09_2025.pdf"
+        ]
+      },
+      {
+        "query": "OPME alcada analista humano art. 78",
+        "ok": true,
+        "top_fontes": [
+          "regulamento_geral.pdf",
+          "nota_tecnica_02_documentos.pdf",
+          "nota_tecnica_02_documentos.pdf"
+        ]
+      },
+      {
+        "query": "acupuntura cobertura indicacao clinica anexo IV",
+        "ok": true,
+        "top_fontes": [
+          "anexo_iv_exclusoes.pdf",
+          "anexo_iv_exclusoes.pdf",
+          "anexo_iv_exclusoes.pdf"
+        ]
+      },
+      {
+        "query": "carencia consulta medica 15 dias art. 22",
+        "ok": true,
+        "top_fontes": [
+          "regulamento_geral.pdf",
+          "regulamento_geral.pdf",
+          "nota_tecnica_02_documentos.pdf"
+        ]
+      },
+      {
+        "query": "documento fiscal obrigatorio nota tecnica 02 historico sesso",
+        "ok": true,
+        "top_fontes": [
+          "nota_tecnica_02_documentos.pdf",
+          "regulamento_geral.pdf",
+          "regulamento_geral.pdf"
+        ]
+      }
+    ]
+  },
+  "resumo": {
+    "testes": "46/46",
+    "performance_pct": 100.0
+  }
+}
