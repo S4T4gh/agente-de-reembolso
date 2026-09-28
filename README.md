@@ -68,6 +68,7 @@ Porta **8000**.
 
 | Metodo | Rota | Funcao |
 |---|---|---|
+| `GET` | `/` | Pagina do servico no ar |
 | `GET` | `/health` | Confirma que o processo subiu |
 | `POST` | `/chat` | Um turno da conversa |
 | `POST` | `/reset` | Limpa sessoes e o checkpointer |
