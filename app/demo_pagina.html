@@ -40,6 +40,11 @@
     .pessoa { align-self: flex-start; background: #ffedd5; }
     .agente { align-self: flex-end; background: #f5f5f4; }
     .quem { display: block; font-size: 0.75rem; color: #78716c; margin-bottom: 0.2rem; }
+    #proxima {
+      margin-top: 0.8rem; background: #fff; border: 1px dashed #fdba74; border-radius: 14px; padding: 0.75rem 0.9rem;
+    }
+    #proxima p { margin: 0 0 0.55rem; color: #44403c; }
+    #proxima .rotulo { display: block; font-size: 0.75rem; color: #9a3412; margin-bottom: 0.25rem; }
     form { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
     input { flex: 1; border: 1px solid #d6d3d1; border-radius: 999px; padding: 0.7rem 1rem; font-size: 1rem; }
     @media (max-width: 800px) {
@@ -59,11 +64,15 @@
     <button class="seta" id="proximo" type="button" aria-label="Proximo caso">&#8250;</button>
   </div>
   <div class="acoes">
-    <button class="prim" id="rodar" type="button">Rodar esta conversa</button>
+    <button class="prim" id="rodar" type="button">Come&ccedil;ar esta conversa</button>
     <button class="sec" id="recomecar" type="button">Recome&ccedil;ar</button>
   </div>
   <p id="status"></p>
   <div id="chat" aria-live="polite"></div>
+  <div id="proxima" hidden>
+    <p><span class="rotulo">Pr&oacute;xima fala do roteiro</span><span id="proxima-texto"></span></p>
+    <button class="sec" id="proxima-btn" type="button">Enviar esta mensagem</button>
+  </div>
   <form id="falar">
     <input id="texto" type="text" placeholder="Escrever como o benefici&aacute;rio" autocomplete="off">
     <button class="prim" type="submit">Enviar</button>
@@ -81,6 +90,7 @@ const ROTULO = {
 let casos = [];
 let indice = 0;
 let sessao = "";
+let passo = 0;
 let geracao = 0;
 let ocupado = false;
 
@@ -115,9 +125,24 @@ function selecionar(i) {
   geracao += 1;
   indice = (i + casos.length) % casos.length;
   sessao = "";
+  passo = 0;
   chat.innerHTML = "";
   status.textContent = "";
+  mostrarProxima();
   pintar();
+}
+
+function mostrarProxima() {
+  const caixa = document.getElementById("proxima");
+  const caso = casos[indice];
+  const turno = sessao && caso ? caso.turnos[passo] : null;
+  if (!turno) {
+    caixa.hidden = true;
+    return;
+  }
+  caixa.hidden = false;
+  const fala = turno.mensagem || (turno.anexo ? "Enviar o arquivo " + turno.anexo : "");
+  document.getElementById("proxima-texto").textContent = fala;
 }
 
 function novaSessao() {
@@ -178,63 +203,67 @@ function travar(ligado) {
   ocupado = ligado;
   rodarBtn.disabled = ligado;
   document.getElementById("recomecar").disabled = ligado;
+  document.getElementById("proxima-btn").disabled = ligado;
   texto.disabled = ligado;
 }
 
-async function rodar() {
-  const caso = casos[indice];
+async function disparar(quem, visivel, mensagem, nomeAnexo) {
   const minha = ++geracao;
-  novaSessao();
-  chat.innerHTML = "";
-  status.textContent = "Abrindo o atendimento de " + caso.nome.split(" ")[0] + "...";
+  bolha(quem, "pessoa", visivel);
+  const espera = bolha("Agente", "agente", "Lendo...");
   travar(true);
   try {
-    for (const turno of caso.turnos) {
-      if (minha !== geracao) return;
-      const fala = turno.mensagem || (turno.anexo ? "Enviei " + turno.anexo : "");
-      bolha(caso.nome.split(" ")[0], "pessoa", fala);
-      const espera = bolha("Agente", "agente", "Lendo...");
-      const dado = await enviarTurno(turno.mensagem, turno.anexo);
-      if (minha !== geracao) return;
-      espera.lastChild.textContent = dado.resposta || "";
-      mostrarStatus(dado);
-    }
+    const dado = await enviarTurno(mensagem, nomeAnexo);
+    if (minha !== geracao) return;
+    espera.lastChild.textContent = dado.resposta || "";
+    mostrarStatus(dado);
+    mostrarProxima();
   } catch (erro) {
-    bolha("Agente", "agente", "Nao consegui continuar esta conversa. Tente de novo em instantes.");
+    if (minha !== geracao) return;
+    espera.lastChild.textContent = "Nao consegui responder agora. Tente de novo em instantes.";
   } finally {
     if (minha === geracao) travar(false);
   }
 }
 
+async function enviarProxima() {
+  const caso = casos[indice];
+  const turno = caso && caso.turnos[passo];
+  if (!turno || ocupado) return;
+  if (!sessao) novaSessao();
+  passo += 1;
+  const fala = turno.mensagem || (turno.anexo ? "Enviei " + turno.anexo : "");
+  await disparar(caso.nome.split(" ")[0], fala, turno.mensagem, turno.anexo);
+}
+
+function comecar() {
+  if (!casos.length || ocupado) return;
+  passo = 0;
+  novaSessao();
+  chat.innerHTML = "";
+  status.textContent = "";
+  mostrarProxima();
+  enviarProxima();
+}
+
 document.getElementById("anterior").addEventListener("click", () => selecionar(indice - 1));
 document.getElementById("proximo").addEventListener("click", () => selecionar(indice + 1));
-rodarBtn.addEventListener("click", rodar);
+rodarBtn.addEventListener("click", comecar);
+document.getElementById("proxima-btn").addEventListener("click", enviarProxima);
 document.getElementById("recomecar").addEventListener("click", () => selecionar(indice));
 document.getElementById("falar").addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const mensagem = texto.value.trim();
   if (!mensagem || ocupado || !casos.length) return;
+  const caso = casos[indice];
   if (!sessao) {
     novaSessao();
     chat.innerHTML = "";
+    passo = caso.turnos.length;
+    mostrarProxima();
   }
-  const caso = casos[indice];
   texto.value = "";
-  geracao += 1;
-  const minha = geracao;
-  bolha(caso.nome.split(" ")[0], "pessoa", mensagem);
-  const espera = bolha("Agente", "agente", "Lendo...");
-  travar(true);
-  try {
-    const dado = await enviarTurno(mensagem, null);
-    if (minha !== geracao) return;
-    espera.lastChild.textContent = dado.resposta || "";
-    mostrarStatus(dado);
-  } catch (erro) {
-    espera.lastChild.textContent = "Nao consegui responder agora. Tente de novo em instantes.";
-  } finally {
-    if (minha === geracao) travar(false);
-  }
+  await disparar(caso.nome.split(" ")[0], mensagem, mensagem, null);
 });
 
 fetch("/demo/casos").then((r) => r.json()).then((lista) => {
