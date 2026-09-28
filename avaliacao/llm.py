@@ -67,7 +67,27 @@ def _texto_da_resposta(devolvido: dict) -> str:
 
 def perguntar_json(sistema: str, usuario: str) -> dict:
     """Uma chamada, resposta em JSON. Determinística por construção."""
+    from app.llm import carregar_env, _completar_chat, _usar_nvidia
+
+    carregar_env()
+    if _usar_nvidia():
+        texto = _completar_chat(
+            [
+                type("M", (), {"type": "system", "content": sistema})(),
+                type("M", (), {"type": "human", "content": usuario})(),
+            ],
+            temperature=0,
+            max_tokens=2048,
+        )
+        return _extrair_json(texto)
+
     endpoint, chave, modelo = _config()
+    if "azurewebsites.net" in endpoint:
+        raise LLMIndisponivel(
+            "o gateway da prova esta desligado (403 Site Disabled). "
+            "Use BOOTCAMP_LLM_ENDPOINT=https://integrate.api.nvidia.com/v1 "
+            "e a chave da NVIDIA em BOOTCAMP_API_KEY."
+        )
     url = f"{endpoint}/v1beta/models/{modelo}:generateContent"
     corpo = {
         "systemInstruction": {"parts": [{"text": sistema}]},

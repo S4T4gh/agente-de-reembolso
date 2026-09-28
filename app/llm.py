@@ -33,7 +33,7 @@ import os
 import re
 from pathlib import Path
 
-MODELO = "moonshotai/kimi-k3"
+MODELO = "nvidia/nemotron-3-ultra-550b-a55b"
 MODELO_EMBEDDING = "gemini-embedding-2"
 DIMENSOES = 1536
 
@@ -77,13 +77,12 @@ def _ambiente() -> tuple[str, str]:
 
 
 def _modelo() -> str:
-    carregar_env()
-    return os.getenv("BOOTCAMP_LLM_MODEL", MODELO).strip() or MODELO
+    return MODELO
 
 
-def _usar_kimi() -> bool:
+def _usar_nvidia() -> bool:
     endpoint, _ = _ambiente()
-    return "nvidia.com" in endpoint or _modelo().startswith("moonshotai/")
+    return "nvidia.com" in endpoint or _modelo().startswith("nvidia/")
 
 
 class _Resposta:
@@ -107,32 +106,7 @@ def _texto_mensagem(mensagem) -> tuple[str, str]:
     return papel, str(conteudo)
 
 
-def _completar_chat(mensagens, temperature: float = 0, max_tokens: int = 2048) -> str:
-    """Chama o Kimi K3 no formato compativel com a API da NVIDIA."""
-    import httpx
-
-    endpoint, chave = _ambiente()
-    corpo = {
-        "model": _modelo(),
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": False,
-        "messages": [
-            {"role": papel, "content": texto}
-            for papel, texto in (_texto_mensagem(m) for m in mensagens)
-        ],
-    }
-    with httpx.Client(timeout=120) as cliente:
-        resposta = cliente.post(
-            f"{endpoint}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {chave}",
-                "Content-Type": "application/json",
-            },
-            json=corpo,
-        )
-        resposta.raise_for_status()
-        dados = resposta.json()
+def _extrair_texto(dados: dict) -> str:
     mensagem = (dados.get("choices") or [{}])[0].get("message") or {}
     conteudo = mensagem.get("content") or mensagem.get("reasoning_content") or ""
     if isinstance(conteudo, list):
@@ -143,7 +117,69 @@ def _completar_chat(mensagens, temperature: float = 0, max_tokens: int = 2048) -
     return str(conteudo).strip()
 
 
-class _ChatKimi:
+def _aguardar_resultado(cliente, endpoint: str, chave: str, resposta):
+    """A NVIDIA devolve 202 quando o pedido ainda esta em andamento. O resultado sai em /status."""
+    import time
+
+    pedido = resposta.headers.get("nvcf-reqid") or ""
+    if not pedido and resposta.content:
+        pedido = str((resposta.json() or {}).get("requestId") or "")
+    if not pedido:
+        raise RuntimeError("a NVIDIA respondeu 202 sem o identificador do pedido")
+    cabecalhos = {"Authorization": f"Bearer {chave}", "Accept": "application/json"}
+    for _ in range(60):
+        time.sleep(2)
+        consulta = cliente.get(f"{endpoint}/status/{pedido}", headers=cabecalhos)
+        if consulta.status_code == 202:
+            continue
+        return consulta
+    raise RuntimeError("o Nemotron nao concluiu o pedido a tempo")
+
+
+def _completar_chat(mensagens, temperature: float = 0, max_tokens: int = 2048) -> str:
+    """Chama o Nemotron 3 Ultra na API da NVIDIA.
+
+    reasoning_effort none evita a cadeia de raciocinio longa. Se a funcao
+    demorar, a NVIDIA responde 202 e o resultado e consultado em seguida.
+    """
+    import httpx
+
+    endpoint, chave = _ambiente()
+    corpo = {
+        "model": _modelo(),
+        "temperature": min(max(float(temperature), 0), 1),
+        "max_tokens": min(max(max_tokens, 1), 32768),
+        "reasoning_effort": "none",
+        "stream": False,
+        "messages": [
+            {"role": papel, "content": texto}
+            for papel, texto in (_texto_mensagem(m) for m in mensagens)
+        ],
+    }
+    cabecalhos = {
+        "Authorization": f"Bearer {chave}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "NVCF-POLL-SECONDS": "20",
+    }
+    with httpx.Client(timeout=150) as cliente:
+        resposta = cliente.post(
+            f"{endpoint}/chat/completions", headers=cabecalhos, json=corpo)
+        if resposta.status_code == 202:
+            resposta = _aguardar_resultado(cliente, endpoint, chave, resposta)
+        situacao = (resposta.headers.get("nvcf-status") or "").lower()
+        if resposta.status_code >= 400 or situacao == "errored":
+            detalhe = (resposta.text or "").strip()[:180]
+            raise RuntimeError(
+                "a NVIDIA recusou o Nemotron "
+                f"(HTTP {resposta.status_code}, status {situacao or 'vazio'}). "
+                + (detalhe or "a funcao do modelo falhou do lado deles, sem detalhe.")
+            )
+        dados = resposta.json()
+    return _extrair_texto(dados)
+
+
+class _ChatNvidia:
     def __init__(self, temperature: float = 0):
         self.temperature = temperature
 
@@ -155,10 +191,10 @@ class _ChatKimi:
 
 # ------------------------------------------------------- LangChain / LangGraph
 def criar_llm(**extra):
-    """Chat via Kimi K3 quando o endpoint e o da NVIDIA."""
+    """Chat via Nemotron quando o endpoint e o da NVIDIA."""
     temperature = extra.pop("temperature", 0)
-    if _usar_kimi():
-        return _ChatKimi(temperature=temperature)
+    if _usar_nvidia():
+        return _ChatNvidia(temperature=temperature)
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     endpoint, chave = _ambiente()
@@ -183,7 +219,9 @@ def criar_llm_llamaindex(**extra):
     from llama_index.llms.google_genai import GoogleGenAI
 
     endpoint, chave = _ambiente()
-    return GoogleGenAI(model=MODELO, api_key=chave,
+    if _usar_nvidia():
+        raise FaltaConfiguracao("no endpoint da NVIDIA o chat sai por criar_llm()")
+    return GoogleGenAI(model="gemini-2.5-flash-lite", api_key=chave,
                        http_options={"base_url": endpoint}, **extra)
 
 

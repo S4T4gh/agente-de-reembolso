@@ -1,4 +1,4 @@
-"""Recuperacao: BM25 e, no Kimi, releitura dos trechos pelo proprio modelo."""
+"""Recuperacao: BM25 e, na NVIDIA, releitura dos trechos pelo Nemotron."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from llama_index.core import Settings, StorageContext, load_index_from_storage
 from llama_index.core.schema import NodeWithScore, TextNode
 
-from app.llm import _completar_chat, _usar_kimi, carregar_env, criar_embeddings_llamaindex
+from app.llm import _completar_chat, _usar_nvidia, carregar_env, criar_embeddings_llamaindex
 
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_STORAGE = RAIZ / "storage"
@@ -69,7 +69,7 @@ def _rerank(query: str, candidatos: list[NodeWithScore], top_n: int) -> list[Nod
 
 
 def _rerank_kimi(query: str, candidatos: list[NodeWithScore], top_n: int) -> list[NodeWithScore]:
-    """O Kimi escolhe, entre os trechos do BM25, os que respondem a pergunta."""
+    """O modelo escolhe, entre os trechos do BM25, os que respondem a pergunta."""
     if not candidatos:
         return []
     blocos = []
@@ -119,7 +119,7 @@ def buscar(query: str, top_k: int = 6) -> list[dict]:
         except Exception:
             pass
     fundidos = _rrf(listas) if len(listas) > 1 else listas[0]
-    if _usar_kimi():
+    if _usar_nvidia():
         finais = _rerank_kimi(query, fundidos, top_n=top_k)
     else:
         finais = _rerank(query, fundidos, top_n=top_k)

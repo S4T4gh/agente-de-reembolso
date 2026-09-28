@@ -216,7 +216,7 @@ Dockerfile
 
 ## Stack
 
-Python 3.11, FastAPI, Pydantic, LangGraph, LlamaIndex, Gemini (gateway configuravel), MCP, PyMuPDF, Tesseract e Docker.
+Python 3.11, FastAPI, Pydantic, LangGraph, LlamaIndex, Nemotron 3 Ultra (API da NVIDIA), MCP, PyMuPDF, Tesseract e Docker.
 
 ## Limites
 
