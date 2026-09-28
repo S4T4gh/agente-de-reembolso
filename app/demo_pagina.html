@@ -40,9 +40,9 @@
     .pessoa { align-self: flex-start; background: #ffedd5; }
     .agente { align-self: flex-end; background: #f5f5f4; }
     .quem { display: block; font-size: 0.75rem; color: #78716c; margin-bottom: 0.2rem; }
-    .bolha a.doc-link { color: #9a3412; font-weight: 600; }
-    .bolha iframe.doc {
-      display: block; width: 100%; height: 240px; margin-top: 0.45rem;
+    .bolha a.doc-link { color: #9a3412; font-size: 0.85rem; }
+    .bolha img.doc {
+      display: block; width: 100%; height: auto; margin: 0.45rem 0;
       border: 1px solid #e7e5e4; border-radius: 8px; background: #fff;
     }
     #proxima {
@@ -175,19 +175,16 @@ function bolha(quem, classe, mensagem, nomeAnexo) {
   el.appendChild(document.createTextNode(mensagem || "Documento enviado"));
   if (nomeAnexo) {
     const url = "/demo/anexo/" + encodeURIComponent(nomeAnexo);
-    el.appendChild(document.createElement("br"));
+    const img = document.createElement("img");
+    img.className = "doc";
+    img.src = url + "?previa=1";
+    img.alt = nomeAnexo;
+    el.appendChild(img);
     const link = document.createElement("a");
     link.className = "doc-link";
-    link.href = url;
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = "Abrir " + nomeAnexo;
+    link.href = url + "?baixar=1";
+    link.textContent = "Baixar " + nomeAnexo;
     el.appendChild(link);
-    const frame = document.createElement("iframe");
-    frame.className = "doc";
-    frame.src = url;
-    frame.title = nomeAnexo;
-    el.appendChild(frame);
   }
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;

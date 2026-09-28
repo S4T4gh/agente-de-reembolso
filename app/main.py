@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from app.llm import carregar_env
 from app.schemas import ChatRequest, ChatResponse, Categoria, Decisao
@@ -58,13 +58,29 @@ def demo_casos() -> list:
 
 
 @app.get("/demo/anexo/{nome}")
-def demo_anexo(nome: str):
+def demo_anexo(nome: str, baixar: int = 0, previa: int = 0):
     from app.demo import anexo
 
     caminho = anexo(nome)
     if caminho is None:
         raise HTTPException(status_code=404, detail="anexo nao encontrado")
-    return FileResponse(caminho, media_type="application/pdf", filename=nome)
+    if previa:
+        import pymupdf
+
+        doc = pymupdf.open(caminho)
+        try:
+            pagina = doc[0]
+            zoom = 900 / float(pagina.rect.width or 1)
+            png = pagina.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom)).tobytes("png")
+        finally:
+            doc.close()
+        return Response(content=png, media_type="image/png")
+    return FileResponse(
+        caminho,
+        media_type="application/pdf",
+        filename=nome,
+        content_disposition_type="attachment" if baixar else "inline",
+    )
 
 
 @app.post("/chat", response_model=ChatResponse)
