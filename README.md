@@ -1,197 +1,220 @@
-# Comece por aqui
+# Agente de reembolso
 
-O enunciado completo está em **`instrucoes_da_prova.pdf`**. Leia antes de
-codificar — ele define o que é avaliado, e há regra sobre como usar IA nele.
+Agente conversacional que analisa pedidos de reembolso em saude suplementar. O beneficiario conversa, envia o recibo e recebe uma decisao fundamentada, ou o encaminhamento para um analista humano quando o caso esta fora da alcada automatizada.
 
-Isto aqui é só para você começar a rodar em cinco minutos.
+O sistema nao e um unico prompt. Ele separa identidade, documento, norma e calculo, e so aprova um valor depois de uma verificacao explicita.
 
-## 1. A chave já está aqui
+## O que o agente faz
 
-**Não há nada para configurar.** O `.env` deste pacote já vem com o endpoint e a
-chave preenchidos. Nenhuma chave de nuvem, nenhum provedor, nenhuma região —
-abra e use.
+1. Identifica o beneficiario pela carteirinha e consulta o cadastro.
+2. Classifica o anexo (PDF ou imagem) e extrai valor, data e codigo do procedimento.
+3. Recupera a regra vigente na base normativa.
+4. Verifica elegibilidade (carencia, prazo, cobertura, alcada, documentos obrigatorios).
+5. Calcula o reembolso de forma deterministica, ou escala o caso sem informar valor.
 
-A chave é **compartilhada pela turma**, com um crédito comum de 100 milhões de
-tokens de entrada e 100 milhões de saída. O que você gasta sai do bolo de todo
-mundo, e não há recarga.
+Cada dado tem uma fonte propria. Misturar as fontes e o erro mais grave do fluxo.
 
-O arquivo está no `.gitignore`, então `git add -A` não o leva para o seu
-repositório. **Não publique a chave**: exposta, ela é revogada — e aí ninguém
-da turma trabalha até sair outra.
-
-## 2. Confira que está de pé
-
-**Python 3.11** — a mesma do Dockerfile.
-
-```bash
-python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m app.llm
-```
-
-Saída esperada:
-
-```
-chat      : pronto.
-embeddings: 1536 dimensões
-saldo     : {'candidato': '...', 'entrada': {...}, 'saida': {...}}
-```
-
-## 3. O modelo
-
-**Gemini 2.5 Flash Lite**, servido por um gateway da banca. Você não escolhe
-modelo — é o mesmo para todos os candidatos.
-
-`app/llm.py` já traz tudo montado. Use e siga; ninguém é avaliado por acertar
-`base_url`.
-
-```python
-from app.llm import criar_llm, criar_embeddings
-
-llm = criar_llm()                    # ChatGoogleGenerativeAI, pronto para bind_tools
-emb = criar_embeddings()             # gemini-embedding-2, 1536 dimensões
-```
-
-Com LlamaIndex:
-
-```python
-from llama_index.core import Settings
-from app.llm import criar_llm_llamaindex, criar_embeddings_llamaindex
-
-Settings.llm = criar_llm_llamaindex()
-Settings.embed_model = criar_embeddings_llamaindex()
-```
-
-E um agente com ferramentas, que é o que a prova pede:
-
-```python
-from langgraph.prebuilt import create_react_agent
-from app.llm import criar_llm
-
-agente = create_react_agent(criar_llm(), [suas_ferramentas_mcp])
-```
-
-## 4. As bibliotecas são sugestão
-
-O `requirements.txt` traz um conjunto **sugerido**, com as versões fixadas — são
-as que a prova usou e que resolvem juntas no Python 3.11. Instalar e sair
-codificando funciona.
-
-| | Versão |
+| Informacao | Fonte |
 |---|---|
-| `langchain-google-genai` | 4.3.2 |
-| `langgraph` · `langchain-core` | 1.2.10 · 1.5.3 |
-| `llama-index-core` | 0.14.23 |
-| `llama-index-llms-google-genai` · `-embeddings-` | 0.9.6 · 0.5.1 |
-| `llama-index-retrievers-bm25` | 0.7.1 |
-| `fastapi` · `uvicorn` · `pydantic` · `httpx` | 0.141.1 · 0.52.1 · 2.13.4 · 0.28.1 |
-| `pymupdf` · `pytesseract` · `pillow` · `python-docx` | 1.28.2 · 0.3.13 · 12.3.0 · 1.2.0 |
-| `mcp` | 1.29.0 — **não** 2.0: a série 2.0 removeu o `fastmcp` que o servidor usa |
+| Carteirinha | O beneficiario informa |
+| Plano, adesao, situacao, sessoes e historico | MCP da operadora |
+| Categoria, valor pago, data e codigo TUSS | Documento anexado |
+| Regra vigente e fundamentacao | Base em `kb/`, via busca hibrida |
 
-**Pode trocar.** Outra biblioteca, outra versão, outro framework de API. O que
-não muda são as exigências do item 4 do enunciado (grafo, LlamaIndex na
-indexação, vector store embarcado, busca híbrida, Pydantic na saída) e o
-contrato do item 6.
+## Arquitetura
 
-Se trocar, **fixe a versão que usou**. Build que resolve dependência na hora
-quebra sozinho entre o seu teste e a correção — e aí quem perde é você.
+Supervisor em LangGraph com tres subagentes e handoff explicito. O estado da conversa fica no checkpointer, indexado por `session_id`. O cliente nao reenvia o historico a cada turno.
 
-> Nota sobre o LangGraph 1.x: `langgraph.prebuilt.create_react_agent` ainda
-> funciona, mas avisa que mudou para `langchain.agents.create_agent`. Vale
-> lembrar que o item 4 pede supervisor com handoff explícito — um ReAct pronto
-> resolve o "chamar ferramenta", não a arquitetura que a prova cobra.
+```
+Cliente HTTP
+    |
+    v
+FastAPI  /health  /chat  /reset
+    |
+    v
+Supervisor (LangGraph + MemorySaver)
+    |
+    +-- triagem     identidade, art. 8 (terceiros)
+    +-- documento   OCR, classificacao, verificacao
+    +-- normas      RAG, duvidas e calculo apos veredito OK
+            |
+            +-- MCP          cadastro, historico, protocolo
+            +-- LlamaIndex   BM25 + busca densa + fusao RRF
+            +-- calculo      teto, coparticipacao, limite anual
+```
 
-## 5. O crédito é da turma
+| No | Arquivo | Papel |
+|---|---|---|
+| supervisor | `app/agents/supervisor/graph.py` | Escolhe o proximo subagente |
+| triagem | `app/agents/triagem/node.py` | Carteirinha, cadastro e recusa de terceiro |
+| documento | `app/agents/documento/node.py` | Extracao e veredito, sem aprovar valor |
+| normas | `app/agents/normas/node.py` | Responde a pergunta do turno e calcula so se a verificacao for OK |
 
-**100 milhões de tokens de entrada e 100 milhões de saída, compartilhados.**
-Não há recarga.
+Ordem obrigatoria da apuracao:
+
+```
+documento -> verificacao
+                 |
+     INCOMPLETO  |  BLOQUEADO           |  OK
+     nao aprova  |  NEGADO, PENDENTE    |  normas calcula o valor
+                 |  ou ESCALADO         |
+```
+
+Estado incompleto nao vira aprovacao. Datas e adesao ausentes nao sao preenchidas com valor padrao.
+
+## Contrato HTTP
+
+Porta **8000**.
+
+| Metodo | Rota | Funcao |
+|---|---|---|
+| `GET` | `/health` | Confirma que o processo subiu |
+| `POST` | `/chat` | Um turno da conversa |
+| `POST` | `/reset` | Limpa sessoes e o checkpointer |
+
+Pedido:
+
+```json
+{
+  "session_id": "sess-001",
+  "mensagem": "fui no psicologo, da pra pedir reembolso?",
+  "anexo": {
+    "filename": "recibo.pdf",
+    "mime_type": "application/pdf",
+    "base64": "..."
+  }
+}
+```
+
+O anexo e opcional e pode chegar em qualquer turno, inclusive antes da carteirinha.
+
+Resposta (`ChatResponse`):
+
+| Campo | Significado |
+|---|---|
+| `resposta` | Texto para o beneficiario |
+| `categoria_documento` | Classe do documento, ou `null` |
+| `decisao` | Decisao, ou `null` enquanto a analise nao fechou |
+| `valor_solicitado_brl` | Valor lido no documento |
+| `valor_reembolso_brl` | Valor calculado; `null` quando escalado |
+| `regras_aplicadas` | Dispositivos citados, por exemplo `ART-35` |
+| `protocolo` | Numero aberto no MCP, quando houver escalonamento |
+| `pendencias` | O que ainda falta |
+
+Categorias: `CONSULTA_MEDICA`, `SESSAO_TERAPIA`, `EXAME_DIAGNOSTICO`, `RELATORIO_CLINICO`, `MATERIAL_OPME`, `DESPESA_NAO_COBERTA`, `INVALIDO`.
+
+Decisoes: `APROVADO`, `APROVADO_PARCIAL`, `PENDENTE_DOCUMENTO`, `NEGADO`, `FORA_DE_ESCOPO`, `ESCALADO_ANALISTA`.
+
+## Recuperacao normativa
+
+O indice e construido fora do container e fica em `storage/`. O Dockerfile so copia esse diretorio.
 
 ```bash
-.venv/bin/python -c "from app.llm import saldo; print(saldo())"
+python -m ingest.build
 ```
 
-Esgotou, as chamadas passam a devolver `429` — para todo mundo. Duas
-consequências práticas:
+A busca em `app/rag/retriever.py` combina BM25 e vetor denso, funde os rankings com RRF e reranqueia. O corpus em `kb/` inclui regulamento, circulares, exclusoes, nota tecnica, FAQ e tabela de procedimentos. Circulares alteram artigos anteriores; a recuperacao precisa da regra vigente, nao de um trecho desatualizado.
 
-- **Teto de 50 mil tokens de entrada por chamada.** Acima disso vem `413`. Um
-  agente que recupera os trechos certos manda alguns milhares por turno e nunca
-  encosta nesse limite; quem tenta enviar a base inteira no prompt bate nele no
-  primeiro turno. A base tem ~89 mil tokens.
-- **Não deixe laço rodando.** Um `while True` esquecido de madrugada é crédito
-  que faltou para o colega no dia seguinte.
+## Calculo
 
-## 6. Suba o servidor MCP
+| Modulo | Papel |
+|---|---|
+| `app/calculo/verificacao.py` | Veredito: `OK`, `BLOQUEADO` ou `INCOMPLETO` |
+| `app/calculo/reembolso.py` | Teto em URS, coparticipacao, limite anual |
 
-Ele **vem no pacote**, em `mcp/` — nada para baixar. Duas formas:
+O modelo de linguagem redige a resposta e ajuda na busca. O valor numerico sai do motor deterministico.
+
+Material OPME e pedidos acima da alcada abrem protocolo via MCP, devolvem `ESCALADO_ANALISTA` e nao informam valor de reembolso.
+
+## Guardrails
+
+- CPF completo e mascarado na resposta.
+- Codigo CID e hipotese diagnostica nao sao repetidos.
+- Pedido sobre outra carteirinha, conjuge ou dependente e recusado.
+- Se o titular ja tiver desfecho, essa recusa nao apaga a decisao dele.
+- Falha interna em `/chat` devolve uma resposta segura, sem HTTP 500.
+
+## Como executar
+
+Requisitos: Python 3.11 e as quatro variaveis de ambiente.
+
+```text
+BOOTCAMP_LLM_ENDPOINT
+BOOTCAMP_API_KEY
+MCP_OPERADORA_URL
+MCP_OPERADORA_TOKEN
+```
+
+Copie `.env.example` para `.env` e preencha. O `.env` nao entra no Git.
 
 ```bash
-docker compose up mcp                            # porta 9000
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m app.llm
 ```
+
+Subir MCP de treino e o agente:
 
 ```bash
-cd mcp && MCP_OPERADORA_DADOS=../casos_treino MCP_OPERADORA_TOKEN=treino \
-  ../.venv/bin/python -m mcp_operadora.server    # sem Docker
+docker compose up -d
 ```
 
-Confira que respondeu:
+Ou so a imagem do agente, com o indice ja presente em `storage/`:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9000/mcp   # 401 = de pé
+docker build -t agente-de-reembolso .
+docker run --env-file .env -p 8000:8000 agente-de-reembolso
 ```
 
-`401` é o esperado sem token — significa que o servidor está no ar e exigindo o
-`Authorization: Bearer treino`, que já está no seu `.env`.
-
-Três ferramentas: `consultar_beneficiario`, `consultar_historico` e
-`abrir_protocolo`. O detalhe de cada uma está em `mcp/README.md` — vale ler o
-trecho sobre o histórico, porque há caso na avaliação que depende de somá-lo.
-
-**O cadastro da avaliação é outro.** Localmente o servidor lê as personas do seu
-`casos_treino/`; na correção a banca sobe o mesmo servidor com outro arquivo,
-com outras pessoas. Não decore carteirinha — o que tem de funcionar é o cliente.
-
-## 7. Rodar os casos de treino
-
-Precisa estar de pé: o **MCP na 9000** e o **seu container na 8000**. O script
-não sobe nada por você.
+Conferir:
 
 ```bash
-.venv/bin/python rodar_treino.py          # as três conversas
-.venv/bin/python rodar_treino.py -v       # mostra cada turno
-.venv/bin/python rodar_treino.py --caso 02
+curl http://localhost:8000/health
 ```
 
-Não é uma bateria de asserções sobre uma resposta pronta. Por turno:
+Os tres casos de treino ficam em `casos_treino/`:
 
-1. um modelo faz o papel do beneficiário e escreve a mensagem, reagindo à sua
-   resposta anterior;
-2. ela vai para o seu `POST /chat`, mesmo `session_id`, anexo em base64;
-3. o **juiz** — outro modelo — decide se aquele turno foi atendido;
-4. no último turno o juiz também recebe o gabarito e confere se você não o
-   contradiz;
-5. sem modelo nenhum: porta de entrada (resposta repetida) e violações de CPF,
-   CID e dado de terceiro.
-
-**As duas pontas usam o mesmo endpoint e a mesma chave do seu `.env`** — o
-mesmo proxy e o mesmo modelo que respondem ao seu agente. É o mesmo código da
-correção, em `avaliacao/`; abra e leia, não existe rubrica oculta.
-
-Uma rodada completa custa uns 13 mil tokens de entrada, fora o que o seu agente
-gasta. Pouco — mas o bolo é dividido, então não deixe em laço.
-
-A nota de cada conversa vem **70% dos turnos atendidos e o restante do
-desfecho correto**; a nota final é a média das conversas. Estas três **não valem nota** — as da
-avaliação oficial são outras, e lá a conta é a mesma.
-
-## Onde fica o quê
-
+```bash
+python rodar_treino.py --roteiro-fixo
+python rodar_treino.py -v
 ```
-app/llm.py          o modelo, já configurado — comece por ele
-mcp/                o servidor MCP da operadora, pronto — só subir
-app/main.py         o contrato HTTP: /health, /chat, /reset
-app/agents/         supervisor e subagentes: é aqui que está a prova
-app/rag/            recuperação sobre a kb/
-ingest/build.py     constrói o índice em storage/ (rode antes do Docker)
-kb/                 os 10 documentos normativos da sua prova
-casos_treino/       as três conversas de treino
-avaliacao/          o motor de correção — leia, não precisa alterar
+
+## Estrutura
+
+```text
+app/main.py                  API
+app/schemas.py               Contrato Pydantic
+app/llm.py                   Modelo e embeddings
+app/agents/supervisor/       Grafo e roteamento
+app/agents/triagem/          Identidade e escopo
+app/agents/documento/        Extracao e verificacao
+app/agents/normas/           RAG, duvida e calculo
+app/calculo/                 Veredito e valor
+app/rag/                     Busca hibrida
+app/tools/mcp_client.py      Cliente MCP
+app/guardrails/              Privacidade da saida
+kb/                          Documentos normativos
+storage/                     Indice pronto
+ingest/build.py              Construcao do indice
+mcp/                         Servidor MCP de treino
+casos_treino/                Conversas de validacao
+Dockerfile
 ```
+
+## Fluxo de exemplo
+
+1. O beneficiario envia so o PDF. A triagem guarda o arquivo e pede a carteirinha.
+2. Ele informa os 16 digitos. O MCP carrega cadastro e historico.
+3. O no de documento classifica o recibo e escreve o veredito.
+4. Se o veredito for OK, normas calcula teto, coparticipacao e limite anual.
+5. Se for OPME ou estiver acima da alcada, abre protocolo e nao informa valor.
+6. Uma pergunta no meio da conversa ("por que nao volta o valor inteiro?") vai para normas, com a base normativa, sem reiniciar o pedido.
+7. Um pedido sobre outra pessoa e recusado e o atendimento do titular continua.
+
+## Stack
+
+Python 3.11, FastAPI, Pydantic, LangGraph, LlamaIndex, Gemini (gateway configuravel), MCP, PyMuPDF, Tesseract e Docker.
+
+## Limites
+
+O regulamento deste repositorio e ficticio e serve para exercitar o fluxo. O checkpointer e em memoria. A extracao do recibo depende da qualidade do PDF ou da foto. Embeddings e redacao dependem do endpoint de modelo configurado no `.env`.
